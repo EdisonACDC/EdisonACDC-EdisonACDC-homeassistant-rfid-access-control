@@ -10,11 +10,14 @@
       }
     },
     "error": {
-      "already_configured": "Device already configured"
+      "already_configured": "Device already configured",
+      "unknown": "Unknown error occurred",
+      "unknown_error": "Unknown error occurred"
     },
     "abort": {
       "no_devices": "No compatible Zigbee keypad devices found. Make sure your KEPZB-110 is paired with Home Assistant (ZHA integration)",
-      "already_configured": "Device already configured"
+      "already_configured": "Device already configured",
+      "unknown_error": "An unknown error occurred during configuration"
     }
   },
   "title": "RFID Access Control"

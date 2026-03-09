@@ -2,20 +2,27 @@
   "config": {
     "step": {
       "user": {
-        "title": "Select RFID Keypad Device",
-        "description": "Choose the Zigbee keypad device to use for access control\n\nFound {num_devices} device(s)",
+        "title": "Select RFID Keypad Device (ZHA)",
+        "description": "Choose the Zigbee keypad device paired with ZHA integration\n\nFound {num_devices} device(s)",
         "data": {
           "device_id": "Keypad Device"
+        }
+      },
+      "manual": {
+        "title": "Enter Device ID",
+        "description": "No ZHA devices found. If using Zigbee2MQTT, enter your device ID\n\n{info}",
+        "data": {
+          "device_id": "Device ID (e.g., 'portoncino' or device UUID)"
         }
       }
     },
     "error": {
       "already_configured": "Device already configured",
       "unknown": "Unknown error occurred",
-      "unknown_error": "Unknown error occurred"
+      "unknown_error": "Unknown error occurred",
+      "invalid_device": "Device ID cannot be empty"
     },
     "abort": {
-      "no_devices": "No compatible Zigbee keypad devices found. Make sure your KEPZB-110 is paired with Home Assistant (ZHA integration)",
       "already_configured": "Device already configured",
       "unknown_error": "An unknown error occurred during configuration"
     }

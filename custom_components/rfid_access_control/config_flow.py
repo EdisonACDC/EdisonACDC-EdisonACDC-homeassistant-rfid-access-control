@@ -15,38 +15,6 @@ from .const import DOMAIN, CONF_DEVICE_ID, SUPPORTED_MODELS
 _LOGGER = logging.getLogger(__name__)
 
 
-async def async_get_available_keypads(hass: HomeAssistant) -> dict:
-    """Get available Zigbee keypad devices."""
-    try:
-        dev_reg = dr.async_get(hass)
-        keypads = {}
-        
-        for device in dev_reg.devices.values():
-            if not device:
-                continue
-            
-            # Check if device matches supported models
-            try:
-                if device.identifiers:
-                    for _, identifier in device.identifiers:
-                        for model in SUPPORTED_MODELS.keys():
-                            if model in identifier:
-                                device_name = device.name or device.model or "Unknown Keypad"
-                                keypads[device.id] = {
-                                    "name": device_name,
-                                    "model": device.model or model,
-                                    "manufacturer": device.manufacturer,
-                                }
-                                break
-            except (AttributeError, TypeError):
-                continue
-        
-        return keypads
-    except Exception as e:
-        _LOGGER.error(f"Error getting keypads: {e}")
-        return {}
-
-
 class RFIDAccessControlConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
     """Handle a config flow for RFID Access Control."""
 
@@ -59,93 +27,61 @@ class RFIDAccessControlConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
         errors: dict[str, str] = {}
 
         if user_input is not None:
-            try:
-                # Validate device exists
-                device_id = user_input.get(CONF_DEVICE_ID)
-                if device_id:
+            device_id = user_input.get(CONF_DEVICE_ID, "").strip()
+            
+            if not device_id:
+                errors["base"] = "invalid_device"
+            else:
+                try:
                     await self.async_set_unique_id(device_id)
                     self._abort_if_unique_id_configured()
                     
                     return self.async_create_entry(
-                        title=f"RFID Access Control - {device_id[:8]}",
-                        data=user_input,
+                        title=f"RFID Access Control - {device_id[:20]}",
+                        data={"device_id": device_id},
                     )
-            except Exception as e:
-                _LOGGER.error(f"Error creating entry: {e}")
-                errors["base"] = "unknown"
+                except self._abort_if_unique_id_configured.__class__:
+                    return self.async_abort(reason="already_configured")
+                except Exception as e:
+                    _LOGGER.error(f"Unexpected error: {e}")
+                    errors["base"] = "unknown"
 
-        # Get available keypads from ZHA
+        # Try to get ZHA devices
         try:
-            keypads = await async_get_available_keypads(self.hass)
+            dev_reg = dr.async_get(self.hass)
+            zha_devices = {}
+            
+            for device in dev_reg.devices.values():
+                if device and device.identifiers:
+                    for _, identifier in device.identifiers:
+                        for model in SUPPORTED_MODELS.keys():
+                            if model in str(identifier):
+                                device_name = device.name or device.model or "Unknown"
+                                zha_devices[device.id] = f"{device_name} ({device.model or 'Device'})"
+                                break
+            
+            # If ZHA devices found, show them
+            if zha_devices:
+                return self.async_show_form(
+                    step_id="user",
+                    data_schema=vol.Schema({
+                        vol.Required(CONF_DEVICE_ID): vol.In(zha_devices),
+                    }),
+                    errors=errors,
+                    description_placeholders={"info": "Select your KEPZB-110 device"},
+                )
         except Exception as e:
-            _LOGGER.error(f"Error getting keypads: {e}")
-            keypads = {}
+            _LOGGER.warning(f"Could not get ZHA devices: {e}")
 
-        # If no ZHA devices found, show manual entry form (for Zigbee2MQTT users)
-        if not keypads:
-            return self.async_show_form(
-                step_id="manual",
-                data_schema=vol.Schema({
-                    vol.Required(CONF_DEVICE_ID): cv.string,
-                }),
-                errors=errors,
-                description_placeholders={
-                    "info": "No ZHA devices found. If using Zigbee2MQTT, enter your device ID/topic.",
-                },
-            )
-
-        # Build form schema for ZHA devices
-        try:
-            schema = vol.Schema({
-                vol.Required(CONF_DEVICE_ID): vol.In({
-                    device_id: f"{info['name']} ({info.get('model', 'Unknown')})"
-                    for device_id, info in keypads.items()
-                }),
-            })
-        except Exception as e:
-            _LOGGER.error(f"Error building schema: {e}")
-            return self.async_abort(reason="unknown_error")
-
+        # If no ZHA devices, show manual entry
         return self.async_show_form(
             step_id="user",
-            data_schema=schema,
-            errors=errors,
-            description_placeholders={
-                "num_devices": str(len(keypads)),
-            },
-        )
-
-    async def async_step_manual(
-        self, user_input: dict[str, Any] | None = None
-    ) -> FlowResult:
-        """Handle manual device ID entry (for Zigbee2MQTT)."""
-        errors: dict[str, str] = {}
-
-        if user_input is not None:
-            try:
-                device_id = user_input.get(CONF_DEVICE_ID)
-                if device_id:
-                    await self.async_set_unique_id(device_id)
-                    self._abort_if_unique_id_configured()
-                    
-                    return self.async_create_entry(
-                        title=f"RFID Access Control - {device_id[:8]}",
-                        data=user_input,
-                    )
-                else:
-                    errors["base"] = "invalid_device"
-            except Exception as e:
-                _LOGGER.error(f"Error creating entry: {e}")
-                errors["base"] = "unknown"
-
-        return self.async_show_form(
-            step_id="manual",
             data_schema=vol.Schema({
                 vol.Required(CONF_DEVICE_ID): cv.string,
             }),
             errors=errors,
             description_placeholders={
-                "info": "Enter your KEPZB-110 device ID (e.g., 'portoncino' for Zigbee2MQTT topic 'zigbee2mqtt/portoncino')",
+                "info": "No ZHA devices found. Enter device ID (e.g., 'portoncino' for Zigbee2MQTT)",
             },
         )
 

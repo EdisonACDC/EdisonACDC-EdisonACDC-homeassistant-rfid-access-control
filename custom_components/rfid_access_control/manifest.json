@@ -1,0 +1,12 @@
+{
+  "domain": "rfid_access_control",
+  "name": "RFID Access Control",
+  "codeowners": [],
+  "config_flow": true,
+  "documentation": "https://github.com/yourusername/rfid-access-control",
+  "issue_tracker": "https://github.com/yourusername/rfid-access-control/issues",
+  "requirements": [],
+  "version": "1.0.0",
+  "after_dependencies": ["zha"],
+  "homeassistant": "2023.1.0"
+}

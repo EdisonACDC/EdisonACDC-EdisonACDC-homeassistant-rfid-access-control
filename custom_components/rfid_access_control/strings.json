@@ -1,0 +1,21 @@
+{
+  "config": {
+    "step": {
+      "user": {
+        "title": "Select RFID Keypad Device",
+        "description": "Choose the Zigbee keypad device to use for access control\n\nFound {num_devices} device(s)",
+        "data": {
+          "device_id": "Keypad Device"
+        }
+      }
+    },
+    "error": {
+      "already_configured": "Device already configured"
+    },
+    "abort": {
+      "no_devices": "No compatible Zigbee keypad devices found. Make sure your KEPZB-110 is paired with Home Assistant (ZHA integration)",
+      "already_configured": "Device already configured"
+    }
+  },
+  "title": "RFID Access Control"
+}

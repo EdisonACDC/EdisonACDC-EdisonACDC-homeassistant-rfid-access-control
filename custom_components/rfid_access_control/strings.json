@@ -2,30 +2,51 @@
   "config": {
     "step": {
       "user": {
-        "title": "Select RFID Keypad Device (ZHA)",
-        "description": "Choose the Zigbee keypad device paired with ZHA integration\n\nFound {num_devices} device(s)",
+        "title": "RFID Access Control - Configura Device",
+        "description": "Seleziona o inserisci il Device ID del tuo tastierino KEPZB-110\n\nSe non vedi il device:\n- Assicurati che sia accoppiato (ZHA o Zigbee2MQTT)\n- Se usi Zigbee2MQTT, inserisci il topic (es: 'portoncino')\n\n{info}",
         "data": {
-          "device_id": "Keypad Device"
-        }
-      },
-      "manual": {
-        "title": "Enter Device ID",
-        "description": "No ZHA devices found. If using Zigbee2MQTT, enter your device ID\n\n{info}",
-        "data": {
-          "device_id": "Device ID (e.g., 'portoncino' or device UUID)"
+          "device_id": "Device ID o Identificativo"
         }
       }
     },
     "error": {
-      "already_configured": "Device already configured",
-      "unknown": "Unknown error occurred",
-      "unknown_error": "Unknown error occurred",
-      "invalid_device": "Device ID cannot be empty"
+      "already_configured": "Questo device è già configurato",
+      "unknown": "Errore sconosciuto - controlla i log di Home Assistant",
+      "invalid_device": "Il Device ID non può essere vuoto"
     },
     "abort": {
-      "already_configured": "Device already configured",
-      "unknown_error": "An unknown error occurred during configuration"
+      "already_configured": "Dispositivo già configurato in Home Assistant"
     }
   },
-  "title": "RFID Access Control"
+  "title": "RFID Access Control - Controllo Acceso con PIN e RFID",
+  "services": {
+    "add_user": {
+      "name": "Aggiungi Utente",
+      "description": "Aggiungi un nuovo utente al sistema di controllo acceso"
+    },
+    "remove_user": {
+      "name": "Rimuovi Utente",
+      "description": "Rimuovi un utente dal sistema"
+    },
+    "update_user": {
+      "name": "Modifica Utente",
+      "description": "Modifica informazioni utente"
+    },
+    "add_action": {
+      "name": "Aggiungi Azione",
+      "description": "Aggiungi un'azione da eseguire all'accesso"
+    },
+    "remove_action": {
+      "name": "Rimuovi Azione",
+      "description": "Rimuovi un'azione da un utente"
+    },
+    "validate_access": {
+      "name": "Valida Accesso",
+      "description": "Valida le credenziali utente ed esegui le azioni"
+    },
+    "list_users": {
+      "name": "Lista Utenti",
+      "description": "Ottieni la lista di tutti gli utenti registrati"
+    }
+  }
 }

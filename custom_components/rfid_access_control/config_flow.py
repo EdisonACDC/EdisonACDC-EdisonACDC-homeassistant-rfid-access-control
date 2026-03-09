@@ -74,17 +74,27 @@ class RFIDAccessControlConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
                 _LOGGER.error(f"Error creating entry: {e}")
                 errors["base"] = "unknown"
 
-        # Get available keypads
+        # Get available keypads from ZHA
         try:
             keypads = await async_get_available_keypads(self.hass)
         except Exception as e:
             _LOGGER.error(f"Error getting keypads: {e}")
             keypads = {}
 
+        # If no ZHA devices found, show manual entry form (for Zigbee2MQTT users)
         if not keypads:
-            return self.async_abort(reason="no_devices")
+            return self.async_show_form(
+                step_id="manual",
+                data_schema=vol.Schema({
+                    vol.Required(CONF_DEVICE_ID): cv.string,
+                }),
+                errors=errors,
+                description_placeholders={
+                    "info": "No ZHA devices found. If using Zigbee2MQTT, enter your device ID/topic.",
+                },
+            )
 
-        # Build form schema
+        # Build form schema for ZHA devices
         try:
             schema = vol.Schema({
                 vol.Required(CONF_DEVICE_ID): vol.In({
@@ -102,6 +112,40 @@ class RFIDAccessControlConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
             errors=errors,
             description_placeholders={
                 "num_devices": str(len(keypads)),
+            },
+        )
+
+    async def async_step_manual(
+        self, user_input: dict[str, Any] | None = None
+    ) -> FlowResult:
+        """Handle manual device ID entry (for Zigbee2MQTT)."""
+        errors: dict[str, str] = {}
+
+        if user_input is not None:
+            try:
+                device_id = user_input.get(CONF_DEVICE_ID)
+                if device_id:
+                    await self.async_set_unique_id(device_id)
+                    self._abort_if_unique_id_configured()
+                    
+                    return self.async_create_entry(
+                        title=f"RFID Access Control - {device_id[:8]}",
+                        data=user_input,
+                    )
+                else:
+                    errors["base"] = "invalid_device"
+            except Exception as e:
+                _LOGGER.error(f"Error creating entry: {e}")
+                errors["base"] = "unknown"
+
+        return self.async_show_form(
+            step_id="manual",
+            data_schema=vol.Schema({
+                vol.Required(CONF_DEVICE_ID): cv.string,
+            }),
+            errors=errors,
+            description_placeholders={
+                "info": "Enter your KEPZB-110 device ID (e.g., 'portoncino' for Zigbee2MQTT topic 'zigbee2mqtt/portoncino')",
             },
         )
 

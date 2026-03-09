@@ -1,6 +1,7 @@
 """RFID Access Control integration for Home Assistant."""
 import logging
 from pathlib import Path
+import json
 
 from homeassistant.config_entries import ConfigEntry
 from homeassistant.core import HomeAssistant, ServiceCall
@@ -55,208 +56,247 @@ async def async_setup(hass: HomeAssistant, config: ConfigType) -> bool:
 
 async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
     """Set up RFID Access Control from a config entry."""
-    device_id = entry.data.get(CONF_DEVICE_ID)
-    
-    # Initialize database
-    db = AccessDatabase()
-    
-    # Load persisted data if exists
-    store_path = Path(hass.config.config_dir) / DOMAIN / f"{device_id}.json"
-    if await hass.async_add_executor_job(store_path.exists):
-        try:
-            import json
-            content = await hass.async_add_executor_job(store_path.read_text)
-            data = json.loads(content)
-            db.from_dict(data)
-            _LOGGER.info(f"Loaded {len(db.users)} users from persistent storage")
-        except Exception as e:
-            _LOGGER.error(f"Failed to load persistent data: {e}")
-    
-    hass.data[DOMAIN][entry.entry_id] = {
-        DATA_COORDINATOR: device_id,
-        DATA_USERS_DB: db,
-        "store_path": store_path,
-    }
-    
-    # Register services
-    async def handle_add_user(call: ServiceCall) -> None:
-        """Add a new user."""
-        data = call.data
+    try:
+        device_id = entry.data.get(CONF_DEVICE_ID)
         
-        # Validate inputs
-        pin = data.get(ATTR_USER_PIN, "")
-        rfid = data.get(ATTR_USER_RFID, "")
+        if not device_id:
+            _LOGGER.error("No device_id provided in config entry")
+            return False
         
-        if pin and (len(pin) < MIN_PIN_LENGTH or len(pin) > MAX_PIN_LENGTH):
-            _LOGGER.error(f"PIN length must be between {MIN_PIN_LENGTH} and {MAX_PIN_LENGTH}")
-            return
+        # Initialize database
+        db = AccessDatabase()
         
-        if rfid and len(rfid) < MIN_RFID_LENGTH:
-            _LOGGER.error(f"RFID must be at least {MIN_RFID_LENGTH} characters")
-            return
+        # Create config directory
+        config_dir = Path(hass.config.config_dir) / DOMAIN
         
-        user = AccessUser(
-            user_id=data.get(ATTR_USER_ID, ""),
-            user_name=data.get(ATTR_USER_NAME, ""),
-            pin=pin,
-            rfid=rfid,
-        )
+        def create_dir():
+            config_dir.mkdir(parents=True, exist_ok=True)
         
-        if db.add_user(user):
-            await _save_database(hass, store_path, db)
-            hass.bus.async_fire(EVENT_USER_ADDED, {
-                ATTR_USER_ID: user.user_id,
-                ATTR_USER_NAME: user.user_name,
-            })
-            _LOGGER.info(f"User added: {user.user_name}")
-        else:
-            _LOGGER.error(f"Failed to add user: {user.user_id} already exists")
-    
-    async def handle_remove_user(call: ServiceCall) -> None:
-        """Remove a user."""
-        user_id = call.data.get(ATTR_USER_ID)
+        await hass.async_add_executor_job(create_dir)
         
-        if db.remove_user(user_id):
-            await _save_database(hass, store_path, db)
-            hass.bus.async_fire(EVENT_USER_REMOVED, {
-                ATTR_USER_ID: user_id,
-            })
-            _LOGGER.info(f"User removed: {user_id}")
-        else:
-            _LOGGER.error(f"User not found: {user_id}")
-    
-    async def handle_update_user(call: ServiceCall) -> None:
-        """Update user information."""
-        user_id = call.data.get(ATTR_USER_ID)
-        user_data = {
-            k: v for k, v in call.data.items()
-            if k in ["user_name", "pin", "rfid", "enabled"]
+        # Load persisted data if exists
+        store_path = config_dir / f"{device_id}.json"
+        
+        def load_db():
+            if store_path.exists():
+                try:
+                    content = store_path.read_text()
+                    data = json.loads(content)
+                    db.from_dict(data)
+                    return len(db.users)
+                except Exception as e:
+                    _LOGGER.warning(f"Failed to load database: {e}")
+                    return 0
+            return 0
+        
+        user_count = await hass.async_add_executor_job(load_db)
+        if user_count > 0:
+            _LOGGER.info(f"Loaded {user_count} users from persistent storage")
+        
+        # Store data
+        hass.data[DOMAIN][entry.entry_id] = {
+            DATA_COORDINATOR: device_id,
+            DATA_USERS_DB: db,
+            "store_path": store_path,
         }
         
-        if db.update_user(user_id, user_data):
-            await _save_database(hass, store_path, db)
-            _LOGGER.info(f"User updated: {user_id}")
-        else:
-            _LOGGER.error(f"User not found: {user_id}")
-    
-    async def handle_add_action(call: ServiceCall) -> None:
-        """Add an action to a user."""
-        user_id = call.data.get(ATTR_USER_ID)
-        user = db.get_user(user_id)
+        # Register services
+        async def handle_add_user(call: ServiceCall) -> None:
+            """Add a new user."""
+            try:
+                data = call.data
+                pin = data.get(ATTR_USER_PIN, "")
+                rfid = data.get(ATTR_USER_RFID, "")
+                
+                if pin and (len(pin) < MIN_PIN_LENGTH or len(pin) > MAX_PIN_LENGTH):
+                    _LOGGER.error(f"PIN length must be between {MIN_PIN_LENGTH} and {MAX_PIN_LENGTH}")
+                    return
+                
+                if rfid and len(rfid) < MIN_RFID_LENGTH:
+                    _LOGGER.error(f"RFID must be at least {MIN_RFID_LENGTH} characters")
+                    return
+                
+                user = AccessUser(
+                    user_id=data.get(ATTR_USER_ID, ""),
+                    user_name=data.get(ATTR_USER_NAME, ""),
+                    pin=pin,
+                    rfid=rfid,
+                )
+                
+                if db.add_user(user):
+                    await _save_database(hass, store_path, db)
+                    hass.bus.async_fire(EVENT_USER_ADDED, {
+                        ATTR_USER_ID: user.user_id,
+                        ATTR_USER_NAME: user.user_name,
+                    })
+                    _LOGGER.info(f"User added: {user.user_name}")
+                else:
+                    _LOGGER.error(f"Failed to add user: {user.user_id} already exists")
+            except Exception as e:
+                _LOGGER.error(f"Error in add_user: {e}")
         
-        if not user:
-            _LOGGER.error(f"User not found: {user_id}")
-            return
+        async def handle_remove_user(call: ServiceCall) -> None:
+            """Remove a user."""
+            try:
+                user_id = call.data.get(ATTR_USER_ID)
+                
+                if db.remove_user(user_id):
+                    await _save_database(hass, store_path, db)
+                    hass.bus.async_fire(EVENT_USER_REMOVED, {
+                        ATTR_USER_ID: user_id,
+                    })
+                    _LOGGER.info(f"User removed: {user_id}")
+                else:
+                    _LOGGER.error(f"User not found: {user_id}")
+            except Exception as e:
+                _LOGGER.error(f"Error in remove_user: {e}")
         
-        action = AccessAction(
-            entity_id=call.data.get(ATTR_ACTION_ENTITY, ""),
-            service=call.data.get(ATTR_ACTION_SERVICE, ""),
-            service_data=call.data.get(ATTR_ACTION_DATA, {}),
-            action_name=call.data.get("action_name", ""),
-        )
+        async def handle_update_user(call: ServiceCall) -> None:
+            """Update user information."""
+            try:
+                user_id = call.data.get(ATTR_USER_ID)
+                user_data = {
+                    k: v for k, v in call.data.items()
+                    if k in ["user_name", "pin", "rfid", "enabled"]
+                }
+                
+                if db.update_user(user_id, user_data):
+                    await _save_database(hass, store_path, db)
+                    _LOGGER.info(f"User updated: {user_id}")
+                else:
+                    _LOGGER.error(f"User not found: {user_id}")
+            except Exception as e:
+                _LOGGER.error(f"Error in update_user: {e}")
         
-        user.actions.append(action)
-        await _save_database(hass, store_path, db)
-        _LOGGER.info(f"Action added to user: {user_id}")
-    
-    async def handle_remove_action(call: ServiceCall) -> None:
-        """Remove an action from a user."""
-        user_id = call.data.get(ATTR_USER_ID)
-        action_name = call.data.get("action_name", "")
+        async def handle_add_action(call: ServiceCall) -> None:
+            """Add an action to a user."""
+            try:
+                user_id = call.data.get(ATTR_USER_ID)
+                user = db.get_user(user_id)
+                
+                if not user:
+                    _LOGGER.error(f"User not found: {user_id}")
+                    return
+                
+                action = AccessAction(
+                    entity_id=call.data.get(ATTR_ACTION_ENTITY, ""),
+                    service=call.data.get(ATTR_ACTION_SERVICE, ""),
+                    service_data=call.data.get(ATTR_ACTION_DATA, {}),
+                    action_name=call.data.get("action_name", ""),
+                )
+                
+                user.actions.append(action)
+                await _save_database(hass, store_path, db)
+                _LOGGER.info(f"Action added to user: {user_id}")
+            except Exception as e:
+                _LOGGER.error(f"Error in add_action: {e}")
         
-        user = db.get_user(user_id)
-        if not user:
-            _LOGGER.error(f"User not found: {user_id}")
-            return
+        async def handle_remove_action(call: ServiceCall) -> None:
+            """Remove an action from a user."""
+            try:
+                user_id = call.data.get(ATTR_USER_ID)
+                action_name = call.data.get("action_name", "")
+                
+                user = db.get_user(user_id)
+                if not user:
+                    _LOGGER.error(f"User not found: {user_id}")
+                    return
+                
+                original_count = len(user.actions)
+                user.actions = [a for a in user.actions if a.action_name != action_name]
+                
+                if len(user.actions) < original_count:
+                    await _save_database(hass, store_path, db)
+                    _LOGGER.info(f"Action removed from user: {user_id}")
+                else:
+                    _LOGGER.error(f"Action not found: {action_name}")
+            except Exception as e:
+                _LOGGER.error(f"Error in remove_action: {e}")
         
-        original_count = len(user.actions)
-        user.actions = [a for a in user.actions if a.action_name != action_name]
+        async def handle_validate_access(call: ServiceCall) -> None:
+            """Validate user access and execute actions."""
+            try:
+                pin = call.data.get(ATTR_USER_PIN, "")
+                rfid = call.data.get(ATTR_USER_RFID, "")
+                
+                user = db.find_user_by_credentials(pin=pin, rfid=rfid)
+                
+                if user:
+                    user.record_access()
+                    await _save_database(hass, store_path, db)
+                    
+                    hass.bus.async_fire(EVENT_ACCESS_GRANTED, {
+                        ATTR_USER_ID: user.user_id,
+                        ATTR_USER_NAME: user.user_name,
+                    })
+                    
+                    for action in user.actions:
+                        try:
+                            service_parts = action.service.split(".")
+                            if len(service_parts) == 2:
+                                await hass.services.async_call(
+                                    service_parts[0],
+                                    service_parts[1],
+                                    action.service_data,
+                                )
+                                _LOGGER.info(f"Action executed for {user.user_name}: {action.action_name}")
+                        except Exception as e:
+                            _LOGGER.error(f"Failed to execute action: {e}")
+                    
+                    _LOGGER.info(f"Access granted: {user.user_name}")
+                else:
+                    hass.bus.async_fire(EVENT_ACCESS_DENIED, {
+                        "pin": "***" if pin else "",
+                        "rfid": rfid[-4:] if rfid else "",
+                    })
+                    _LOGGER.warning("Access denied - Invalid credentials")
+            except Exception as e:
+                _LOGGER.error(f"Error in validate_access: {e}")
         
-        if len(user.actions) < original_count:
-            await _save_database(hass, store_path, db)
-            _LOGGER.info(f"Action removed from user: {user_id}")
-        else:
-            _LOGGER.error(f"Action not found: {action_name}")
-    
-    async def handle_validate_access(call: ServiceCall) -> None:
-        """Validate user access and execute actions."""
-        pin = call.data.get(ATTR_USER_PIN, "")
-        rfid = call.data.get(ATTR_USER_RFID, "")
+        def handle_list_users(call: ServiceCall) -> None:
+            """Return list of all users."""
+            users_data = [user.to_dict() for user in db.get_all_users()]
+            _LOGGER.info(f"Listed {len(users_data)} users")
+            hass.data[DOMAIN][entry.entry_id]["last_users"] = users_data
         
-        user = db.find_user_by_credentials(pin=pin, rfid=rfid)
+        # Register all services
+        for service_name, handler in [
+            (SERVICE_ADD_USER, handle_add_user),
+            (SERVICE_REMOVE_USER, handle_remove_user),
+            (SERVICE_UPDATE_USER, handle_update_user),
+            (SERVICE_ADD_ACTION, handle_add_action),
+            (SERVICE_REMOVE_ACTION, handle_remove_action),
+            (SERVICE_VALIDATE_ACCESS, handle_validate_access),
+            (SERVICE_LIST_USERS, handle_list_users),
+        ]:
+            hass.services.async_register(DOMAIN, service_name, handler)
         
-        if user:
-            # Record access
-            user.record_access()
-            await _save_database(hass, store_path, db)
-            
-            # Fire access granted event
-            hass.bus.async_fire(EVENT_ACCESS_GRANTED, {
-                ATTR_USER_ID: user.user_id,
-                ATTR_USER_NAME: user.user_name,
-            })
-            
-            # Execute user actions
-            for action in user.actions:
-                try:
-                    await hass.services.async_call(
-                        action.service.split(".")[0],
-                        action.service.split(".")[1],
-                        action.service_data,
-                    )
-                    _LOGGER.info(f"Action executed for {user.user_name}: {action.action_name}")
-                except Exception as e:
-                    _LOGGER.error(f"Failed to execute action: {e}")
-            
-            _LOGGER.info(f"Access granted: {user.user_name}")
-        else:
-            hass.bus.async_fire(EVENT_ACCESS_DENIED, {
-                "pin": "***" if pin else "",
-                "rfid": rfid[-4:] if rfid else "",
-            })
-            _LOGGER.warning(f"Access denied - Invalid credentials")
-    
-    # Service to list users
-    def handle_list_users(call: ServiceCall) -> None:
-        """Return list of all users."""
-        import json
-        users_data = [user.to_dict() for user in db.get_all_users()]
-        _LOGGER.info(f"Listed {len(users_data)} users")
-        # Store result in attributes for card to read
-        hass.data[DOMAIN][entry.entry_id]["last_users"] = users_data
-    
-    # Register all services
-    for service_name, handler in [
-        (SERVICE_ADD_USER, handle_add_user),
-        (SERVICE_REMOVE_USER, handle_remove_user),
-        (SERVICE_UPDATE_USER, handle_update_user),
-        (SERVICE_ADD_ACTION, handle_add_action),
-        (SERVICE_REMOVE_ACTION, handle_remove_action),
-        (SERVICE_VALIDATE_ACCESS, handle_validate_access),
-        (SERVICE_LIST_USERS, handle_list_users),
-    ]:
-        hass.services.async_register(DOMAIN, service_name, handler)
-    
-    await hass.config_entries.async_forward_entry_setups(entry, PLATFORMS)
-    
-    return True
+        await hass.config_entries.async_forward_entry_setups(entry, PLATFORMS)
+        
+        _LOGGER.info(f"RFID Access Control set up for device: {device_id}")
+        return True
+        
+    except Exception as e:
+        _LOGGER.error(f"Error setting up RFID Access Control: {e}", exc_info=True)
+        return False
 
 
 async def async_unload_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
     """Unload a config entry."""
-    if unload_ok := await hass.config_entries.async_unload_platforms(entry, PLATFORMS):
-        hass.data[DOMAIN].pop(entry.entry_id)
-    
-    return unload_ok
+    try:
+        if unload_ok := await hass.config_entries.async_unload_platforms(entry, PLATFORMS):
+            hass.data[DOMAIN].pop(entry.entry_id)
+        return unload_ok
+    except Exception as e:
+        _LOGGER.error(f"Error unloading entry: {e}")
+        return False
 
 
 async def _save_database(hass: HomeAssistant, store_path: Path, db: AccessDatabase):
     """Save database to file."""
     try:
-        import json
-        store_path.parent.mkdir(parents=True, exist_ok=True)
-        
         def save():
+            store_path.parent.mkdir(parents=True, exist_ok=True)
             store_path.write_text(json.dumps(db.to_dict(), indent=2))
         
         await hass.async_add_executor_job(save)

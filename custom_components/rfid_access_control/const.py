@@ -33,6 +33,7 @@ SERVICE_UPDATE_USER = "update_user"
 SERVICE_ADD_ACTION = "add_action"
 SERVICE_REMOVE_ACTION = "remove_action"
 SERVICE_VALIDATE_ACCESS = "validate_access"
+SERVICE_LIST_USERS = "list_users"
 
 # Events
 EVENT_ACCESS_GRANTED = "rfid_access_granted"

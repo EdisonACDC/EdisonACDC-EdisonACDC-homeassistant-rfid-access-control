@@ -17,6 +17,7 @@ from .const import (
     SERVICE_ADD_ACTION,
     SERVICE_REMOVE_ACTION,
     SERVICE_VALIDATE_ACCESS,
+    SERVICE_LIST_USERS,
     ATTR_USER_ID,
     ATTR_USER_NAME,
     ATTR_USER_PIN,
@@ -215,6 +216,15 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
             })
             _LOGGER.warning(f"Access denied - Invalid credentials")
     
+    # Service to list users
+    def handle_list_users(call: ServiceCall) -> None:
+        """Return list of all users."""
+        import json
+        users_data = [user.to_dict() for user in db.get_all_users()]
+        _LOGGER.info(f"Listed {len(users_data)} users")
+        # Store result in attributes for card to read
+        hass.data[DOMAIN][entry.entry_id]["last_users"] = users_data
+    
     # Register all services
     for service_name, handler in [
         (SERVICE_ADD_USER, handle_add_user),
@@ -223,6 +233,7 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
         (SERVICE_ADD_ACTION, handle_add_action),
         (SERVICE_REMOVE_ACTION, handle_remove_action),
         (SERVICE_VALIDATE_ACCESS, handle_validate_access),
+        (SERVICE_LIST_USERS, handle_list_users),
     ]:
         hass.services.async_register(DOMAIN, service_name, handler)
     
